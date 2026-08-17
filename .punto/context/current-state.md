@@ -1,7 +1,7 @@
 ---
 id: chat-mcp-publisher-current-state
 status: canonical
-version: 1
+version: 2
 updated: 2026-08-17
 ---
 
@@ -9,32 +9,42 @@ updated: 2026-08-17
 
 ## Canonical baseline
 
-El repositorio fue bootstrappeado en `main` con un README mínimo en:
+La inicialización completa de Chat MCP Publisher fue incorporada a `main` mediante PR #1.
 
-`4b0d0ff5125648c2fd2265e21e941d61cd839333`
+Estado canónico observado para esta reconciliación:
 
-Ese commit existe únicamente para crear una revisión canónica desde la cual pueda seguirse el flujo branch → PR.
+`aafa7ff5dd3152e073a3dfd1e2989feacce19a8b`
 
-## Propuesta activa
+Ese baseline contiene el Project Pack v1, la builder skill, referencias de compatibilidad MCP, golden path AppDeploy, evals y template de backend.
 
-La inicialización completa del proyecto se prepara en:
+## Estado funcional observado
 
-`agent/init-chat-mcp-publisher`
+Chat MCP Publisher codifica el workflow reusable aprendido al publicar GrillMe para ChatGPT Web:
 
-Mientras esa branch no sea mergeada a `main`, el Project Pack y la implementación publicados allí tienen provenance `change_proposal` y no habilitan el alta canónica en el Project Registry.
+- clasifica tool-only / widget / stateful;
+- diseña tools con schemas, annotations y metadata;
+- separa `server/discover` moderno de `initialize` legacy;
+- conoce el patrón de gateway AppDeploy para registrar MCPs en ChatGPT Web;
+- exige validación más allá de que el hosting reporte deployment exitoso;
+- documenta differential debugging contra un MCP conocido que ya funcione.
 
-## Alcance de la propuesta
+## Integración con Punto por Punto
 
-- builder skill `chat-mcp-publisher`;
-- contrato MCP moderno + legacy utilizado para ChatGPT Web;
-- golden path AppDeploy;
-- template TypeScript para backend MCP;
-- evals para tool-only, widgets, fallos de registro y publicación comunitaria.
+- `project_id: chat-mcp-publisher` está registrado en `PuntoxPunto/Punto-x-Punto`;
+- el alta fue incorporada mediante Registry PR #33;
+- Registry merge SHA observado: `5e45bae0f566e1a6f3e869ac94681d7164102fd0`;
+- el Registry referencia `.punto/project.yaml`, `canonical_ref: main` e `identity_node_id: chat-mcp-publisher-identity`;
+- no se añadió ninguna relación cross-project implícita durante el registro.
 
-## Registro Punto por Punto
+## Alcance canónico actual
 
-El proyecto todavía no debe considerarse registrado en `PuntoxPunto/Punto-x-Punto` hasta que este Project Pack exista en `main` y pase `pp:project-health` con scope `pack`.
+- `SKILL.md` con workflow de publicación MCP para ChatGPT Web;
+- `references/CHATGPT_MCP_CONTRACT.md`;
+- `references/APPDEPLOY_GOLDEN_PATH.md`;
+- `references/EVALS.md`;
+- `templates/backend-index.ts`;
+- README de uso y límites de publicación comunitaria.
 
 ## Próximo gate
 
-Revisión humana y merge de la PR de inicialización. Después del merge, ejecutar `pp:project-register` desde el SHA canónico y proponer el alta en `projects/registry.json`.
+Usar la skill en el próximo MCP real y reconciliar el golden path sólo cuando nuevas pruebas observadas justifiquen cambios. El Project Pack y el Registry ya pueden utilizarse como contexto canónico del proyecto.
