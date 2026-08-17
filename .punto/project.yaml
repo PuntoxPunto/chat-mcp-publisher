@@ -1,0 +1,9 @@
+schema_version: 1
+project_id: chat-mcp-publisher
+name: Chat MCP Publisher
+repository: PuntoxPunto/chat-mcp-publisher
+canonical_ref: main
+project_type: chatgpt-skill
+context_map: .punto/context-map.yaml
+pack_root: .punto/
+identity_node_id: chat-mcp-publisher-identity
