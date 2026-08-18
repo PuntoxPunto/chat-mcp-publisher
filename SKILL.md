@@ -1,6 +1,6 @@
 ---
 name: chat-mcp-publisher
-description: Build and publish reusable MCP-powered capabilities for ChatGPT Web Chat. Use when the user wants to turn a prompt, workflow, skill, tool, or small app into a custom ChatGPT app/plugin backed by a remote MCP server, especially when deploying through AppDeploy. This skill knows the ChatGPT modern discovery + legacy compatibility contract, validates tool metadata, deploys, tests, and returns the exact MCP endpoint to register in ChatGPT Developer Mode.
+description: Build and publish reusable MCP-powered capabilities for normal ChatGPT Web Chat. Use when the user wants to turn a prompt, workflow, skill, tool, capability router, or small interactive app into a remote ChatGPT app/plugin, especially through AppDeploy. Covers tool-only apps, widgets, read-only orchestration, provider fallbacks/doctor checks, ChatGPT MCP compatibility, deployment QA, and registration.
 ---
 
 # Chat MCP Publisher
@@ -9,91 +9,94 @@ description: Build and publish reusable MCP-powered capabilities for ChatGPT Web
 
 Turn a reusable capability into a remote MCP app that can be selected or @mentioned from normal ChatGPT Web conversations.
 
-This is a **publisher/builder skill**. It does not itself replace the MCP app it creates.
+This is a **builder/publisher skill**. It creates the MCP app; it is not the runtime replacement for that app.
 
-Typical user requests:
+Typical triggers:
 
-- "Convert this skill so I can invoke it from ChatGPT Chat."
-- "Publish this prompt as a ChatGPT app/plugin."
-- "Make an MCP for this workflow."
-- "Deploy this tool through AppDeploy and give me the URL to register."
-- "Create a community-shareable ChatGPT capability."
+- `/publish-mcp <idea>`
+- `convert this skill into a ChatGPT Web tool`
+- `make this available in normal Chat`
+- `publish this workflow as an MCP`
+- `create a ChatGPT plugin/app for this capability`
 
 ## Governing principle
 
-Do not confuse:
+Do not confuse Personal Skills, Work/Project instructions, custom GPT behavior, and remote MCP apps.
 
-- Personal Skills / Work behaviors
-- Project instructions
-- Custom GPT instructions
-- Remote MCP apps available in ChatGPT Web Chat
+If the target is **normal ChatGPT Web Chat**, the deliverable is a stable remote HTTPS MCP unless the user explicitly chooses another container.
 
-If the user's target is **normal ChatGPT Web Chat**, the deliverable is a **remote MCP app/plugin** with a stable HTTPS endpoint, unless the user explicitly asks for a different container.
+## Required references
 
-## Default architecture
+Before implementation read:
 
-Choose the smallest useful archetype:
+- `references/CHATGPT_MCP_CONTRACT.md` for the proven ChatGPT/AppDeploy transport;
+- `references/APPDEPLOY_GOLDEN_PATH.md` for deployment and registration;
+- `references/PATTERNS_V2.md` whenever the app uses external providers, widgets, host tools, cross-chat state, authentication, or persistence.
 
-1. `tool-only`
-   - Default for prompt/workflow capabilities.
-   - No embedded UI.
-   - One or a few model-visible tools.
+Use current official OpenAI Apps/MCP documentation for time-sensitive product, Developer Mode, auth, or submission claims. Prefer observed working deployments over guessed protocol behavior.
 
-2. `widget`
-   - Use only when embedded interaction materially improves the workflow.
-   - Add `ui://` resources and MCP Apps bridge metadata.
+## 1. Choose the smallest architecture
 
-3. `stateful-app`
-   - Use only when durable server-side state is genuinely required.
+Classify the request before writing code.
 
-Prefer `tool-only`.
+### `tool-only`
 
-## Mandatory docs check
+Default for prompts, workflows and behavioral capabilities. One or a few model-visible tools; no embedded UI.
 
-Before generating or modifying an MCP app:
+### `widget`
 
-1. Consult current official OpenAI Apps/MCP documentation if available.
-2. Prefer current docs over memory.
-3. Treat product availability, Developer Mode, permissions, and submission rules as time-sensitive.
-4. If the runtime provides a known-good MCP deployment, inspect it before inventing a new transport pattern.
+Use only when embedded interaction materially improves the task: visual review, prototype switching, rich selection, an editor, a before/after report, or another UI-native workflow.
 
-For AppDeploy, read:
-- `references/APPDEPLOY_GOLDEN_PATH.md`
-- `references/CHATGPT_MCP_CONTRACT.md`
+### `stateful-app`
 
-## Workflow
+Use only when durable server-side state is genuinely necessary **and** per-user identity/auth has been validated end-to-end from ChatGPT to the MCP.
 
-### Phase 1 — Convert the capability into tools
+### `capability-router`
 
-Extract:
+Use when one user-facing capability may be served by multiple providers. Tool names should describe the capability, while runtime results report provider provenance and fallback attempts.
 
-- What the user invokes.
-- Inputs.
-- Expected output.
-- Whether it is read-only.
-- Whether it needs external services.
-- Whether it needs persistence.
-- Whether it needs a widget.
+Prefer, in order:
 
-Define one job per tool.
+```text
+tool-only
+-> widget when interaction justifies it
+-> portable state before server state
+-> stateful only after identity is proven
+```
 
-Tool descriptions should begin with behavior cues such as:
+## 2. Convert the capability into tools
+
+For each tool determine:
+
+- exact user/job intent;
+- inputs;
+- output;
+- read/write semantics;
+- idempotency;
+- open-world behavior;
+- external providers;
+- whether host tools are required;
+- whether persistence or a widget is actually necessary.
+
+Define one coherent job per tool.
+
+Descriptions should clearly say when the model should use the tool, for example:
 
 > Use this when the user explicitly asks to...
 
-Every tool must have:
+Every model-visible tool should have:
 
 - `name`
 - `title`
 - `description`
 - `inputSchema`
-- `outputSchema` when returning `structuredContent`
+- `outputSchema` whenever `structuredContent` is returned
 - `securitySchemes`
-- `annotations`
+- truthful `annotations`
 - `_meta.securitySchemes`
 - `_meta.ui.visibility`
 
-For a tool-only app intended for model invocation:
+Typical noauth read-only metadata:
 
 ```ts
 securitySchemes: [{ type: 'noauth' }],
@@ -109,23 +112,21 @@ _meta: {
 }
 ```
 
-Set annotations truthfully. Never mark a mutating tool read-only.
+Set `openWorldHint` truthfully. A read-only web/search tool normally has open-world behavior even though it does not mutate anything.
 
-### Phase 2 — Design the MCP result
+## 3. Design robust tool results
 
-Prefer:
+Prefer a small model-facing result plus machine-readable state:
 
 ```ts
 {
-  content: [{ type: 'text', text: 'Useful model-facing instruction/result' }],
-  structuredContent: { ...small machine-readable result... },
+  content: [{ type: 'text', text: 'Useful result or directive' }],
+  structuredContent: { ... },
   isError: false
 }
 ```
 
-If `structuredContent` is returned, declare `outputSchema`.
-
-Normal tool failures should generally return a **tool result** with:
+Normal execution failures should generally become tool-level errors:
 
 ```ts
 {
@@ -134,201 +135,247 @@ Normal tool failures should generally return a **tool result** with:
 }
 ```
 
-rather than crashing the MCP transport.
+Do not crash the MCP transport for an ordinary provider/tool failure.
 
-### Phase 3 — Implement ChatGPT compatibility
+For provider-backed capabilities, return provenance when useful:
 
-When deploying through AppDeploy, use the golden transport contract in
-`references/CHATGPT_MCP_CONTRACT.md`.
-
-Important:
-
-- Modern discovery and legacy initialize are separate compatibility paths.
-- `server/discover` is the modern ChatGPT scan path.
-- `initialize` remains a compatibility fallback.
-- Do not casually merge the two contracts.
-- Enforce modern header/body metadata consistency exactly when the request is modern.
-- `GET /api/mcp` may return 405 with `Allow: POST`; do not assume GET discovery is required.
-- Always expose `POST /api/mcp`.
-
-### Phase 4 — Deploy through AppDeploy
-
-If AppDeploy tools are available:
-
-1. Inspect a known-good MCP app in the account when available.
-2. Call AppDeploy deployment instructions before changing code.
-3. Use `frontend+backend`.
-4. Keep the frontend diagnostic surface minimal.
-5. Deploy the backend MCP route.
-6. Poll until terminal status.
-7. Fix validation, QA, runtime, or coverage problems automatically when possible.
-8. Do not stop at "deployment ready".
-
-Use `references/APPDEPLOY_GOLDEN_PATH.md`.
-
-### Phase 5 — Validate like ChatGPT, not just like hosting
-
-A successful hosting test does NOT prove ChatGPT can register the MCP.
-
-Validate both paths:
-
-#### Legacy compatibility
-
-Test:
-
-- `GET /api/mcp` behaves intentionally.
-- `initialize` with `2025-11-25`.
-- `tools/list`.
-- `resources/list`.
-- `resources/read` if a widget/resource exists.
-- every tool has appropriate schemas and metadata.
-
-#### Modern discovery
-
-Test a request shaped as:
-
-- header `MCP-Protocol-Version: 2026-07-28`
-- header `Mcp-Method`
-- body `_meta["io.modelcontextprotocol/protocolVersion"] = "2026-07-28"`
-- `Mcp-Name` for `tools/call` or `resources/read`
-
-Verify:
-
-- `server/discover`
-- `supportedVersions`
-- `capabilities`
-- `ttlMs`
-- `cacheScope`
-- `resultType: "complete"`
-- `_meta["io.modelcontextprotocol/serverInfo"]`
-
-When the user already has a known-good ChatGPT MCP deployment in the same environment, compare the transport layer against it.
-
-### Phase 6 — Return the registration endpoint
-
-For AppDeploy apps, do NOT automatically assume the visible frontend URL is the endpoint ChatGPT should register.
-
-The AppDeploy ChatGPT registration endpoint pattern validated in this workflow is:
-
-```text
-https://api-v2.appdeploy.ai/app/<APP_ID>/api/mcp
+```json
+{
+  "backend_used": "provider_a",
+  "attempts": [
+    { "backend": "provider_a", "ok": true }
+  ]
+}
 ```
 
-Return both:
+## 4. External providers: route capabilities, not brands
+
+When a service may fail or change, separate the capability from the implementation:
+
+```text
+capability
+  -> preferred backend
+  -> fallback
+```
+
+Rules:
+
+- do not silently pretend a fallback worked;
+- sanitize provider errors;
+- keep user queries/content out of diagnostic logs by default;
+- distinguish MCP transport health from provider health and real capability-call health;
+- validate at least one real provider call in deployment QA when practical.
+
+Read `references/PATTERNS_V2.md`.
+
+## 5. Doctor checks must prove something
+
+Do not declare health because an executable, config file, connector, or deployment exists.
+
+A useful health model separates:
+
+```text
+transport
+providers
+capability calls
+```
+
+A degraded provider should not automatically make a healthy MCP transport appear broken.
+
+For rate-limited providers, routine doctor checks may use a cheaper live handshake/tool-discovery probe, while deployment QA still executes the real capability at least once.
+
+## 6. Widgets
+
+For an embedded ChatGPT UI, use the known-good MCP Apps resource shape:
+
+```text
+ui://widget/<name>/v1.html
+text/html;profile=mcp-app
+```
+
+The render tool should point to that resource using `ui.resourceUri` and `openai/outputTemplate`.
+
+Test both:
+
+- `resources/list`
+- `resources/read`
+
+Use the MCP Apps bridge first (`ui/initialize`, then initialized notification). `ui/message` and display-mode requests can drive feedback/fullscreen. A `window.openai` path may be used as a compatibility fallback.
+
+If rendering generated/user HTML, sanitize and sandbox it according to the threat model. Static reports should normally run with no scripts. Executable prototypes should avoid `allow-same-origin`, block network access, and use a restrictive CSP.
+
+Do not persist widget state server-side unless the product needs it and identity is safe.
+
+## 7. Cross-chat state: portable before persistent
+
+For a workflow that spans chats, first consider:
+
+```text
+conversation state
++
+portable Markdown/JSON export/import
+```
+
+This is often enough for V1 and avoids a shared multi-user state store.
+
+Never claim progress is saved server-side when it is not.
+
+Before private per-user persistence, prove the full ChatGPT authentication path. A hosting platform's own frontend login/user IDs do **not** automatically prove that its MCP endpoint is a ChatGPT-compatible OAuth/OIDC resource server.
+
+## 8. Host tools are separate capabilities
+
+A behavioral MCP can tell the model to use GitHub, Linear, web research or other tools available to the conversation. It does not magically own those tools.
+
+Therefore:
+
+- keep planning/orchestration MCPs read-only when appropriate;
+- distinguish proposed state from materialized external state;
+- say an issue/file/event was changed only after the actual host tool confirms the mutation.
+
+## 9. Implement ChatGPT compatibility
+
+Use `references/CHATGPT_MCP_CONTRACT.md`.
+
+Critical rules:
+
+- modern `server/discover` and legacy `initialize` are separate paths;
+- modern protocol: `2026-07-28`;
+- enforce modern header/body metadata consistency;
+- `Mcp-Method` must match the JSON-RPC method;
+- `Mcp-Name` must match tool/resource name where required;
+- known-good GET `/api/mcp` behavior is intentional `405` + `Allow: POST`;
+- always expose POST `/api/mcp`;
+- `notifications/initialized` returns HTTP 202 with an empty body;
+- modern complete results include serverInfo metadata.
+
+Do not replace the proven transport with a generic implementation merely because it looks more standard.
+
+## 10. Deploy through AppDeploy
+
+Before **every** deployment or redeployment:
+
+1. call current AppDeploy deployment instructions;
+2. inspect the remote snapshot when state may have drifted;
+3. load the relevant SDK reference before using AppDeploy SDK/client APIs;
+4. state implementation and preflight checklists;
+5. for new ChatGPT MCP apps, normally use `frontend+backend` with a minimal diagnostic frontend;
+6. keep backend route surface small;
+7. deploy;
+8. poll through `deploying` and `deployed_and_testing` until terminal;
+9. inspect QA/errors even if the app reaches READY;
+10. if E2E fails, inspect the exact QA run before changing code;
+11. fix automatically when safe.
+
+Do not stop at `deployment ready` if the requested proof is stronger than hosting readiness.
+
+## 11. QA like a real ChatGPT app
+
+At minimum verify legacy compatibility:
+
+- GET `/api/mcp` intentional behavior;
+- initialize `2025-11-25`;
+- tools/list;
+- tools/call;
+- schemas/metadata;
+- error handling.
+
+For widgets also verify:
+
+- resources/list;
+- resources/read;
+- MIME `text/html;profile=mcp-app`;
+- render-tool resource metadata.
+
+For provider-backed tools:
+
+- doctor/live health where useful;
+- one real capability call;
+- fallback/provenance semantics;
+- visible degradation rather than false readiness.
+
+Keep exactly one fastest high-signal QA path as the sanity test and maintain mobile coverage when interaction/layout differs.
+
+## 12. Return the correct registration endpoint
+
+Do not confuse the AppDeploy diagnostic frontend with the endpoint registered in ChatGPT.
 
 ```text
 Frontend/diagnostic:
 https://<APP>.v2.appdeploy.ai/
 
-MCP registration URL:
+Validated AppDeploy MCP registration pattern:
 https://api-v2.appdeploy.ai/app/<APP_ID>/api/mcp
 ```
 
-Label them clearly.
+Label them separately.
 
-### Phase 7 — ChatGPT registration instructions
+## 13. ChatGPT registration gate
 
-Give concise instructions:
+Give current, concise registration instructions based on official OpenAI UI/docs.
 
-1. Enable Developer Mode if required.
-2. Settings → Apps/Plugins → create custom app/plugin.
-3. Connection: Server URL.
-4. Authentication: No authentication, unless the app really requires auth.
-5. Paste the MCP registration URL.
-6. Scan/create.
-7. Open a **new normal Chat**.
-8. Select the app from Tools or invoke with `@AppName`.
-9. Test a model-visible tool.
+Typical flow:
 
-If tools or metadata change later, refresh/recreate the development app as required by the current ChatGPT UI.
+1. enable Developer Mode where required;
+2. create a custom app/plugin using Server URL;
+3. choose authentication that matches the server;
+4. paste the MCP registration endpoint;
+5. scan/create;
+6. open a **new normal Chat**;
+7. select the app or invoke it by @mention;
+8. execute a model-visible tool.
 
-## AppDeploy known-good reference strategy
+Do not say a new ChatGPT app is confirmed merely because AppDeploy QA passed.
 
-If the account contains a known-good MCP deployment:
+High-confidence completion requires either:
 
-- inspect `backend/index.ts`
-- compare constants and modern/legacy routing
-- compare tool metadata
-- compare resource metadata if widgets are used
-- port the transport layer before modifying application logic
+- actual ChatGPT registration/tool invocation; or
+- explicitly-labeled transport/provider QA when the ChatGPT registration gate has not yet been performed.
 
-Do not copy unrelated business logic.
+## 14. Differential debugging
 
-## Do not declare success too early
+When registration fails and a known-good MCP exists in the same environment, compare transport first:
 
-Never say "the ChatGPT plugin is ready" merely because:
+- server/discover;
+- initialize;
+- modern headers and body metadata;
+- metaResult/serverInfo;
+- tool schemas/metadata;
+- resources metadata for widgets.
 
-- the frontend loads
-- internal AppDeploy tests pass
-- `/api/mcp` responds from inside the same hosting platform
+If backend logs show no registration request, investigate endpoint/gateway/product restrictions before rewriting JSON-RPC.
 
-A high-confidence completion requires at least one of:
+## 15. Security
 
-1. ChatGPT successfully registers/scans the custom app, or
-2. an external client reproduces the expected modern and legacy MCP contracts.
+- no secrets in source/chat/logs;
+- `noauth` only for capabilities that truly require no protected identity/data;
+- accurate read/write annotations;
+- private/local URL guardrails for server-side readers;
+- no shared cookie jar for multiple users;
+- no private server persistence without validated identity isolation;
+- generated HTML should be sandboxed/sanitized according to its capabilities;
+- do not reveal private chain-of-thought.
 
-If registration fails, inspect whether requests reached the backend before changing JSON-RPC behavior.
+## 16. Distribution wording
 
-## Security
+Distinguish:
 
-- Default to `noauth` only when there is no protected user data or privileged action.
-- Never place secrets in source code or chat.
-- Use backend secret storage for external API keys.
-- Keep tool descriptions resistant to accidental activation.
-- For explicit-mode tools, say so in the description.
-- Use accurate destructive/read-only annotations.
-- Do not persist user data unless the product requires it.
+- a shareable remote developer/custom MCP endpoint;
+- broader public directory/submission/review.
 
-## Public/community distribution
-
-Distinguish two stages:
-
-### Shareable developer MCP
-
-A stable remote MCP endpoint can be shared with users who are allowed to add custom apps in Developer Mode.
-
-### Public directory/submission
-
-A broadly listed public ChatGPT app may require additional current OpenAI submission/review requirements.
-
-Do not imply that a developer MCP URL alone means marketplace/public-directory publication.
+Do not imply a working Developer Mode URL is automatically a public marketplace listing.
 
 ## Completion report
 
-When finished, report:
+Report:
 
-### App
-Name and purpose.
-
-### Archetype
-tool-only / widget / stateful-app.
-
-### Tools
-Names and read/write status.
-
-### Deployment
-AppDeploy app id and frontend diagnostic URL.
-
-### ChatGPT MCP URL
-Exact endpoint to register.
-
-### Validation
-What legacy/modern tests passed.
-
-### Chat test
-Whether ChatGPT registration was actually confirmed.
-
-### Remaining gaps
-Anything not yet externally verified.
-
-## Command-style invocation examples
-
-The user may invoke this skill naturally with:
-
-- `/publish-mcp <idea>`
-- `convert this into a ChatGPT Web tool`
-- `make this available in normal Chat`
-- `publish this workflow as an MCP`
-- `create a ChatGPT plugin for this skill`
-
-No literal slash command is required by ChatGPT; these are semantic triggers.
+- App name and purpose
+- Archetype
+- Tools and read/write status
+- Providers/fallbacks if any
+- State model/persistence boundary
+- AppDeploy app id
+- Diagnostic frontend
+- exact ChatGPT MCP registration URL
+- legacy/modern/widget/provider QA performed
+- actual ChatGPT registration status
+- remaining gaps
