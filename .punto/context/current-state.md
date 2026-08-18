@@ -1,50 +1,60 @@
 ---
 id: chat-mcp-publisher-current-state
 status: canonical
-version: 2
-updated: 2026-08-17
+version: 3
+updated: 2026-08-18
 ---
 
 # Chat MCP Publisher — Estado actual
 
 ## Canonical baseline
 
-La inicialización completa de Chat MCP Publisher fue incorporada a `main` mediante PR #1.
+Chat MCP Publisher continúa registrado como `project_id: chat-mcp-publisher` en `PuntoxPunto/Punto-x-Punto`, con `canonical_ref: main` e `identity_node_id: chat-mcp-publisher-identity`.
 
-Estado canónico observado para esta reconciliación:
+La inicialización fue incorporada mediante PR #1; el registro madre mediante PR #33.
 
-`aafa7ff5dd3152e073a3dfd1e2989feacce19a8b`
+## Evolución V2 observada
 
-Ese baseline contiene el Project Pack v1, la builder skill, referencias de compatibilidad MCP, golden path AppDeploy, evals y template de backend.
+Después de GrillMe, el publisher fue usado como base conceptual para una serie de MCPs reales desplegados en AppDeploy:
 
-## Estado funcional observado
+- `handoff-yocioi` — tool-only/read-only;
+- `loopme-xkc1dm` — estado de workflow portable, sin persistencia server-side;
+- `punto-reach-r9sm6m` — capability router, fallbacks, provenance y health probes reales;
+- `teach-028aih` — aprendizaje multi-chat mediante `conversation+portable-export`;
+- `wayfinder-cvsc3n` — mapa portable + frontera explícita entre MCP y herramientas GitHub/Linear del host;
+- `prototype-noa6ix` — primer widget de prototipos, HTML generado aislado/sandboxed;
+- `architecture-review-e4xem3` — reporte estático sanitizado en widget + exploración posterior.
 
-Chat MCP Publisher codifica el workflow reusable aprendido al publicar GrillMe para ChatGPT Web:
+Todos esos deployments alcanzaron estado READY con los QA diseñados para su superficie y 100% de cobertura de endpoints backend declarados. En Punto Reach, el QA final ejecutó además una búsqueda real mediante `tools/call` sobre el MCP remoto de Exa, no sólo `initialize/tools/list`.
 
-- clasifica tool-only / widget / stateful;
-- diseña tools con schemas, annotations y metadata;
-- separa `server/discover` moderno de `initialize` legacy;
-- conoce el patrón de gateway AppDeploy para registrar MCPs en ChatGPT Web;
-- exige validación más allá de que el hosting reporte deployment exitoso;
-- documenta differential debugging contra un MCP conocido que ya funcione.
+## Nuevos patrones canónicos
+
+La skill ahora codifica adicionalmente:
+
+1. **Capability routing** — herramientas orientadas a capacidades, providers preferidos + fallbacks y provenance de `backend_used/attempts`.
+2. **Doctor semántico** — transporte MCP, provider health y capability-call health son estados distintos; instalación/configuración no cuenta como prueba suficiente.
+3. **Widgets MCP** — recursos `ui://`, `text/html;profile=mcp-app`, render tool con `ui.resourceUri`/`openai/outputTemplate`, MCP Apps bridge y aislamiento de HTML generado según el threat model.
+4. **Portable before persistent** — conversación + export/import antes de almacenamiento server-side.
+5. **Auth boundary** — el auth propio del hosting no se considera automáticamente OAuth/OIDC compatible con ChatGPT MCP; no se habilita persistencia privada multiusuario hasta probar identidad de punta a punta.
+6. **Host-tool boundary** — un MCP de comportamiento puede orquestar GitHub/Linear/web tools disponibles en el host, pero no debe fingir que posee o ejecutó esas herramientas.
+
+La referencia detallada vive en `references/PATTERNS_V2.md`.
+
+## Contrato ChatGPT/AppDeploy
+
+El golden transport original sigue vigente y no se reemplazó:
+
+- `server/discover` moderno `2026-07-28`;
+- `initialize` legacy separado;
+- metadata y headers modernos consistentes;
+- `GET /api/mcp` 405 intencional;
+- `POST /api/mcp` como superficie principal;
+- gateway AppDeploy validado: `https://api-v2.appdeploy.ai/app/<APP_ID>/api/mcp`.
 
 ## Integración con Punto por Punto
 
-- `project_id: chat-mcp-publisher` está registrado en `PuntoxPunto/Punto-x-Punto`;
-- el alta fue incorporada mediante Registry PR #33;
-- Registry merge SHA observado: `5e45bae0f566e1a6f3e869ac94681d7164102fd0`;
-- el Registry referencia `.punto/project.yaml`, `canonical_ref: main` e `identity_node_id: chat-mcp-publisher-identity`;
-- no se añadió ninguna relación cross-project implícita durante el registro.
-
-## Alcance canónico actual
-
-- `SKILL.md` con workflow de publicación MCP para ChatGPT Web;
-- `references/CHATGPT_MCP_CONTRACT.md`;
-- `references/APPDEPLOY_GOLDEN_PATH.md`;
-- `references/EVALS.md`;
-- `templates/backend-index.ts`;
-- README de uso y límites de publicación comunitaria.
+No se modifica el Registry ni se agrega ninguna relación cross-project implícita con esta actualización. El proyecto continúa canónico bajo su entrada existente.
 
 ## Próximo gate
 
-Usar la skill en el próximo MCP real y reconciliar el golden path sólo cuando nuevas pruebas observadas justifiquen cambios. El Project Pack y el Registry ya pueden utilizarse como contexto canónico del proyecto.
+Usar estos patrones V2 para las próximas publicaciones y sólo promover a V3 cuando nuevas pruebas observadas justifiquen cambios de arquitectura o transporte. La confirmación de registro/invocación dentro de ChatGPT continúa siendo un gate separado del QA de hosting.
